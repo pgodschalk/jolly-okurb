@@ -523,6 +523,127 @@ func TestBot_ProcessHistoricalMessages(t *testing.T) {
 	})
 }
 
+func TestBot_ShouldDeleteMessage(t *testing.T) {
+	b := &Bot{
+		config:    &config.Config{TargetUserID: "user456"},
+		channelID: "chan123",
+		ready:     true,
+	}
+
+	tests := []struct {
+		name     string
+		message  *discordgo.MessageCreate
+		expected bool
+	}{
+		{
+			name: "deletes skull-only message from target user",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "💀",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "deletes skull with whitespace",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "  💀  ",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "ignores skull with other text",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "💀 lol",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "ignores non-skull message",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "hello",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "ignores wrong channel",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "other-channel",
+					Content:   "💀",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "ignores wrong user",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "💀",
+					Author:    &discordgo.User{ID: "other-user"},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "ignores nil author",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "💀",
+					Author:    nil,
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := b.ShouldDeleteMessage(tt.message)
+			if result != tt.expected {
+				t.Errorf("ShouldDeleteMessage() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBot_ShouldDeleteMessage_NotReady(t *testing.T) {
+	b := &Bot{
+		config:    &config.Config{TargetUserID: "user456"},
+		channelID: "chan123",
+		ready:     false,
+	}
+
+	message := &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			ChannelID: "chan123",
+			Content:   "💀",
+			Author:    &discordgo.User{ID: "user456"},
+		},
+	}
+
+	if b.ShouldDeleteMessage(message) {
+		t.Error("ShouldDeleteMessage() should return false when bot is not ready")
+	}
+}
+
 func TestBot_Shutdown(t *testing.T) {
 	t.Run("cancels context", func(t *testing.T) {
 		b := New(&config.Config{})

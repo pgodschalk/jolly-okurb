@@ -33,10 +33,12 @@ func main() {
 
 	dg.AddHandler(b.OnReady)
 	dg.AddHandler(b.OnReactionAdd)
+	dg.AddHandler(b.OnMessageCreate)
 
 	dg.Identify.Intents = discordgo.IntentsGuildMessages |
 		discordgo.IntentsGuildMessageReactions |
-		discordgo.IntentGuildMembers
+		discordgo.IntentGuildMembers |
+		discordgo.IntentMessageContent
 
 	if err := dg.Open(); err != nil {
 		slog.Error("failed to open connection", "error", err)

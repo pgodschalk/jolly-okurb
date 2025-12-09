@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,6 +82,42 @@ func (b *Bot) OnReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAd
 
 	slog.Debug("detected skull reaction from target user", "message_id", r.MessageID)
 	b.ReplaceReaction(s, r.MessageID)
+}
+
+func (b *Bot) OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if !b.ShouldDeleteMessage(m) {
+		return
+	}
+
+	slog.Debug("detected skull-only message from target user", "message_id", m.ID)
+	if err := s.ChannelMessageDelete(m.ChannelID, m.ID); err != nil {
+		slog.Error("failed to delete message", "message_id", m.ID, "error", err)
+		return
+	}
+	slog.Info("deleted skull-only message", "message_id", m.ID)
+}
+
+func (b *Bot) ShouldDeleteMessage(m *discordgo.MessageCreate) bool {
+	b.mu.RLock()
+	ready := b.ready
+	channelID := b.channelID
+	b.mu.RUnlock()
+
+	if !ready {
+		return false
+	}
+	if m.ChannelID != channelID {
+		return false
+	}
+	if m.Author == nil || m.Author.ID != b.config.TargetUserID {
+		return false
+	}
+	// Check if message is only the skull emoji (with optional whitespace)
+	content := strings.TrimSpace(m.Content)
+	if content != SkullEmoji {
+		return false
+	}
+	return true
 }
 
 func (b *Bot) ShouldProcessReaction(r *discordgo.MessageReactionAdd) bool {
