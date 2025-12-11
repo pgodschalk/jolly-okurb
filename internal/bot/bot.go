@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,11 @@ import (
 const (
 	HistoricalCutoff = "2025-01-01T00:00:00Z"
 )
+
+// UnicodeSkullEmojis lists skull emojis to match.
+// Order matters: ☠️ (with variant selector U+FE0F) must come before ☠ to avoid
+// leaving orphaned variant selectors when stripping.
+var UnicodeSkullEmojis = []string{"💀", "☠️", "☠"}
 
 type Bot struct {
 	config    *config.Config
@@ -125,9 +131,9 @@ func (b *Bot) IsSkullOnlyMessage(content string) bool {
 	}
 
 	// Remove Unicode skull emojis
-	content = strings.ReplaceAll(content, "💀", "")
-	content = strings.ReplaceAll(content, "☠️", "")
-	content = strings.ReplaceAll(content, "☠", "")
+	for _, skull := range UnicodeSkullEmojis {
+		content = strings.ReplaceAll(content, skull, "")
+	}
 
 	// Filter out skull custom emojis, keep everything else
 	remaining := filterCustomEmojis(content, isSkullCustomEmoji)
@@ -342,7 +348,7 @@ func (b *Bot) IsTargetUser(userID string) bool {
 // Matches skull emojis (💀, ☠️) and any custom emoji with "skull" in its name.
 func (b *Bot) IsSkullEmoji(emoji *discordgo.Emoji) bool {
 	// Standard Unicode skull emojis
-	if emoji.Name == "💀" || emoji.Name == "☠️" || emoji.Name == "☠" {
+	if slices.Contains(UnicodeSkullEmojis, emoji.Name) {
 		return true
 	}
 	// Check for custom emojis with "skull" in the name (case-insensitive)
