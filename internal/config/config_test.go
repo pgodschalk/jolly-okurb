@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,11 +18,11 @@ func TestLoad(t *testing.T) {
 		{
 			name: "valid config with all fields",
 			envVars: map[string]string{
-				"DISCORD_TOKEN":          "test-token",
-				"DISCORD_GUILD_ID":       "guild-123",
-				"DISCORD_CHANNEL_NAME":   "test-channel",
-				"DISCORD_TARGET_USER_ID": "user-456",
-				"DISCORD_JOLLYSKULL_ID":  "jollyskull:789",
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_CHANNEL_NAME":    "test-channel",
+				"DISCORD_TARGET_USER_IDS": "user-456",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -34,8 +35,9 @@ func TestLoad(t *testing.T) {
 				if cfg.ChannelName != "test-channel" {
 					t.Errorf("ChannelName = %q, want %q", cfg.ChannelName, "test-channel")
 				}
-				if cfg.TargetUserID != "user-456" {
-					t.Errorf("TargetUserID = %q, want %q", cfg.TargetUserID, "user-456")
+				expected := []string{"user-456"}
+				if !reflect.DeepEqual(cfg.TargetUserIDs, expected) {
+					t.Errorf("TargetUserIDs = %v, want %v", cfg.TargetUserIDs, expected)
 				}
 				if cfg.JollySkullID != "jollyskull:789" {
 					t.Errorf("JollySkullID = %q, want %q", cfg.JollySkullID, "jollyskull:789")
@@ -43,12 +45,77 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name: "default channel name",
+			name: "multiple target user IDs",
+			envVars: map[string]string{
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_TARGET_USER_IDS": "user-1,user-2,user-3",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
+			},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				expected := []string{"user-1", "user-2", "user-3"}
+				if !reflect.DeepEqual(cfg.TargetUserIDs, expected) {
+					t.Errorf("TargetUserIDs = %v, want %v", cfg.TargetUserIDs, expected)
+				}
+			},
+		},
+		{
+			name: "target user IDs with whitespace",
+			envVars: map[string]string{
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_TARGET_USER_IDS": " user-1 , user-2 , user-3 ",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
+			},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				expected := []string{"user-1", "user-2", "user-3"}
+				if !reflect.DeepEqual(cfg.TargetUserIDs, expected) {
+					t.Errorf("TargetUserIDs = %v, want %v", cfg.TargetUserIDs, expected)
+				}
+			},
+		},
+		{
+			name: "backwards compatible with singular env var",
 			envVars: map[string]string{
 				"DISCORD_TOKEN":          "test-token",
 				"DISCORD_GUILD_ID":       "guild-123",
 				"DISCORD_TARGET_USER_ID": "user-456",
 				"DISCORD_JOLLYSKULL_ID":  "jollyskull:789",
+			},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				expected := []string{"user-456"}
+				if !reflect.DeepEqual(cfg.TargetUserIDs, expected) {
+					t.Errorf("TargetUserIDs = %v, want %v", cfg.TargetUserIDs, expected)
+				}
+			},
+		},
+		{
+			name: "plural takes precedence over singular",
+			envVars: map[string]string{
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_TARGET_USER_ID":  "old-user",
+				"DISCORD_TARGET_USER_IDS": "new-user-1,new-user-2",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
+			},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				expected := []string{"new-user-1", "new-user-2"}
+				if !reflect.DeepEqual(cfg.TargetUserIDs, expected) {
+					t.Errorf("TargetUserIDs = %v, want %v", cfg.TargetUserIDs, expected)
+				}
+			},
+		},
+		{
+			name: "default channel name",
+			envVars: map[string]string{
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_TARGET_USER_IDS": "user-456",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -60,9 +127,9 @@ func TestLoad(t *testing.T) {
 		{
 			name: "missing token",
 			envVars: map[string]string{
-				"DISCORD_GUILD_ID":       "guild-123",
-				"DISCORD_TARGET_USER_ID": "user-456",
-				"DISCORD_JOLLYSKULL_ID":  "jollyskull:789",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_TARGET_USER_IDS": "user-456",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
 			},
 			wantErr:     true,
 			errContains: "DISCORD_TOKEN",
@@ -70,29 +137,29 @@ func TestLoad(t *testing.T) {
 		{
 			name: "missing guild ID",
 			envVars: map[string]string{
-				"DISCORD_TOKEN":          "test-token",
-				"DISCORD_TARGET_USER_ID": "user-456",
-				"DISCORD_JOLLYSKULL_ID":  "jollyskull:789",
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_TARGET_USER_IDS": "user-456",
+				"DISCORD_JOLLYSKULL_ID":   "jollyskull:789",
 			},
 			wantErr:     true,
 			errContains: "DISCORD_GUILD_ID",
 		},
 		{
-			name: "missing target user ID",
+			name: "missing target user IDs",
 			envVars: map[string]string{
 				"DISCORD_TOKEN":         "test-token",
 				"DISCORD_GUILD_ID":      "guild-123",
 				"DISCORD_JOLLYSKULL_ID": "jollyskull:789",
 			},
 			wantErr:     true,
-			errContains: "DISCORD_TARGET_USER_ID",
+			errContains: "DISCORD_TARGET_USER_IDS",
 		},
 		{
 			name: "missing jollyskull ID",
 			envVars: map[string]string{
-				"DISCORD_TOKEN":          "test-token",
-				"DISCORD_GUILD_ID":       "guild-123",
-				"DISCORD_TARGET_USER_ID": "user-456",
+				"DISCORD_TOKEN":           "test-token",
+				"DISCORD_GUILD_ID":        "guild-123",
+				"DISCORD_TARGET_USER_IDS": "user-456",
 			},
 			wantErr:     true,
 			errContains: "DISCORD_JOLLYSKULL_ID",
@@ -140,5 +207,6 @@ func clearEnvVars() {
 	os.Unsetenv("DISCORD_GUILD_ID")
 	os.Unsetenv("DISCORD_CHANNEL_NAME")
 	os.Unsetenv("DISCORD_TARGET_USER_ID")
+	os.Unsetenv("DISCORD_TARGET_USER_IDS")
 	os.Unsetenv("DISCORD_JOLLYSKULL_ID")
 }

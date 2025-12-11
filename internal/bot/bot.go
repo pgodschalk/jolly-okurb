@@ -80,8 +80,8 @@ func (b *Bot) OnReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAd
 		return
 	}
 
-	slog.Debug("detected skull reaction from target user", "message_id", r.MessageID)
-	b.ReplaceReaction(s, r.MessageID)
+	slog.Debug("detected skull reaction from target user", "message_id", r.MessageID, "user_id", r.UserID)
+	b.ReplaceReaction(s, r.MessageID, r.UserID)
 }
 
 func (b *Bot) OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -109,7 +109,7 @@ func (b *Bot) ShouldDeleteMessage(m *discordgo.MessageCreate) bool {
 	if m.ChannelID != channelID {
 		return false
 	}
-	if m.Author == nil || m.Author.ID != b.config.TargetUserID {
+	if m.Author == nil || !b.IsTargetUser(m.Author.ID) {
 		return false
 	}
 	// Check if message contains only skull emojis (with optional whitespace)
@@ -133,7 +133,7 @@ func (b *Bot) ShouldProcessReaction(r *discordgo.MessageReactionAdd) bool {
 	if r.ChannelID != channelID {
 		return false
 	}
-	if r.UserID != b.config.TargetUserID {
+	if !b.IsTargetUser(r.UserID) {
 		return false
 	}
 	if r.Emoji.Name != SkullEmoji {
@@ -204,8 +204,9 @@ func (b *Bot) ProcessMessageReactions(s Session, msg *discordgo.Message) int {
 			continue
 		}
 
-		if b.hasTargetUserReaction(s, msg.ID) {
-			if b.ReplaceReaction(s, msg.ID) {
+		targetUsers := b.findTargetUsersWithReaction(s, msg.ID)
+		for _, userID := range targetUsers {
+			if b.ReplaceReaction(s, msg.ID, userID) {
 				replaced++
 			}
 		}
@@ -214,38 +215,42 @@ func (b *Bot) ProcessMessageReactions(s Session, msg *discordgo.Message) int {
 	return replaced
 }
 
-// hasTargetUserReaction paginates through all reactions to find the target user.
-func (b *Bot) hasTargetUserReaction(s Session, messageID string) bool {
+// findTargetUsersWithReaction paginates through all reactions to find target users.
+// Returns the list of target user IDs that have reacted with the skull emoji.
+func (b *Bot) findTargetUsersWithReaction(s Session, messageID string) []string {
 	var afterID string
+	var found []string
 
 	for {
 		users, err := s.MessageReactions(b.channelID, messageID, SkullEmoji, 100, "", afterID)
 		if err != nil {
 			slog.Error("failed to fetch reactions", "message_id", messageID, "error", err)
-			return false
+			return found
 		}
 
 		if len(users) == 0 {
-			return false
+			return found
 		}
 
-		if HasUser(users, b.config.TargetUserID) {
-			return true
+		for _, user := range users {
+			if b.IsTargetUser(user.ID) {
+				found = append(found, user.ID)
+			}
 		}
 
 		// No more pages if we got fewer than requested
 		if len(users) < 100 {
-			return false
+			return found
 		}
 
 		afterID = users[len(users)-1].ID
 	}
 }
 
-func (b *Bot) ReplaceReaction(s Session, messageID string) bool {
-	err := s.MessageReactionRemove(b.channelID, messageID, SkullEmoji, b.config.TargetUserID)
+func (b *Bot) ReplaceReaction(s Session, messageID, userID string) bool {
+	err := s.MessageReactionRemove(b.channelID, messageID, SkullEmoji, userID)
 	if err != nil {
-		slog.Error("failed to remove skull reaction", "message_id", messageID, "error", err)
+		slog.Error("failed to remove skull reaction", "message_id", messageID, "user_id", userID, "error", err)
 		return false
 	}
 
@@ -255,7 +260,7 @@ func (b *Bot) ReplaceReaction(s Session, messageID string) bool {
 		return false
 	}
 
-	slog.Debug("replaced skull with jollyskull", "message_id", messageID)
+	slog.Debug("replaced skull with jollyskull", "message_id", messageID, "user_id", userID)
 	return true
 }
 
@@ -271,6 +276,16 @@ func FindChannelByName(channels []*discordgo.Channel, name string) string {
 func HasUser(users []*discordgo.User, userID string) bool {
 	for _, user := range users {
 		if user.ID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// IsTargetUser checks if the given user ID is in the target user list.
+func (b *Bot) IsTargetUser(userID string) bool {
+	for _, id := range b.config.TargetUserIDs {
+		if id == userID {
 			return true
 		}
 	}

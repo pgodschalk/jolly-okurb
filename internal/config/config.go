@@ -3,14 +3,15 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
-	Token        string // Discord bot token
-	GuildID      string // Server ID to operate in
-	ChannelName  string // Channel name to monitor
-	TargetUserID string // User ID whose reactions to replace
-	JollySkullID string // Custom emoji ID for jollyskull
+	Token         string   // Discord bot token
+	GuildID       string   // Server ID to operate in
+	ChannelName   string   // Channel name to monitor
+	TargetUserIDs []string // User IDs whose reactions to replace
+	JollySkullID  string   // Custom emoji ID for jollyskull
 }
 
 func Load() (*Config, error) {
@@ -18,8 +19,22 @@ func Load() (*Config, error) {
 		Token:        os.Getenv("DISCORD_TOKEN"),
 		GuildID:      os.Getenv("DISCORD_GUILD_ID"),
 		ChannelName:  os.Getenv("DISCORD_CHANNEL_NAME"),
-		TargetUserID: os.Getenv("DISCORD_TARGET_USER_ID"),
 		JollySkullID: os.Getenv("DISCORD_JOLLYSKULL_ID"),
+	}
+
+	// Parse comma-separated user IDs
+	targetUserIDs := os.Getenv("DISCORD_TARGET_USER_IDS")
+	if targetUserIDs == "" {
+		// Fall back to singular for backwards compatibility
+		targetUserIDs = os.Getenv("DISCORD_TARGET_USER_ID")
+	}
+	if targetUserIDs != "" {
+		for _, id := range strings.Split(targetUserIDs, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				cfg.TargetUserIDs = append(cfg.TargetUserIDs, id)
+			}
+		}
 	}
 
 	if cfg.Token == "" {
@@ -31,8 +46,8 @@ func Load() (*Config, error) {
 	if cfg.ChannelName == "" {
 		cfg.ChannelName = "jollyposting"
 	}
-	if cfg.TargetUserID == "" {
-		return nil, fmt.Errorf("DISCORD_TARGET_USER_ID is required")
+	if len(cfg.TargetUserIDs) == 0 {
+		return nil, fmt.Errorf("DISCORD_TARGET_USER_IDS is required")
 	}
 	if cfg.JollySkullID == "" {
 		return nil, fmt.Errorf("DISCORD_JOLLYSKULL_ID is required")

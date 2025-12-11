@@ -133,7 +133,7 @@ func TestHasUser(t *testing.T) {
 
 func TestBot_ShouldProcessReaction(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserID: "user456"},
+		config:    &config.Config{TargetUserIDs: []string{"user456"}},
 		channelID: "chan123",
 		ready:     true,
 	}
@@ -201,7 +201,7 @@ func TestBot_ShouldProcessReaction(t *testing.T) {
 
 func TestBot_ShouldProcessReaction_NotReady(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserID: "user456"},
+		config:    &config.Config{TargetUserIDs: []string{"user456"}},
 		channelID: "chan123",
 		ready:     false,
 	}
@@ -219,17 +219,52 @@ func TestBot_ShouldProcessReaction_NotReady(t *testing.T) {
 	}
 }
 
+func TestBot_ShouldProcessReaction_MultipleTargetUsers(t *testing.T) {
+	b := &Bot{
+		config:    &config.Config{TargetUserIDs: []string{"user1", "user2", "user3"}},
+		channelID: "chan123",
+		ready:     true,
+	}
+
+	tests := []struct {
+		name     string
+		userID   string
+		expected bool
+	}{
+		{"processes first target user", "user1", true},
+		{"processes second target user", "user2", true},
+		{"processes third target user", "user3", true},
+		{"ignores non-target user", "user4", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reaction := &discordgo.MessageReactionAdd{
+				MessageReaction: &discordgo.MessageReaction{
+					ChannelID: "chan123",
+					UserID:    tt.userID,
+					Emoji:     discordgo.Emoji{Name: "💀"},
+				},
+			}
+			result := b.ShouldProcessReaction(reaction)
+			if result != tt.expected {
+				t.Errorf("ShouldProcessReaction() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestBot_ReplaceReaction(t *testing.T) {
 	cfg := &config.Config{
-		TargetUserID: "target-user",
-		JollySkullID: "jollyskull:123",
+		TargetUserIDs: []string{"target-user"},
+		JollySkullID:  "jollyskull:123",
 	}
 
 	t.Run("successful replacement", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
 		mock := &mockSession{}
 
-		result := b.ReplaceReaction(mock, "msg123")
+		result := b.ReplaceReaction(mock, "msg123", "target-user")
 
 		if !result {
 			t.Error("ReplaceReaction() should return true on success")
@@ -258,7 +293,7 @@ func TestBot_ReplaceReaction(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
 		mock := &mockSession{removeErr: errors.New("remove failed")}
 
-		result := b.ReplaceReaction(mock, "msg123")
+		result := b.ReplaceReaction(mock, "msg123", "target-user")
 
 		if result {
 			t.Error("ReplaceReaction() should return false on remove error")
@@ -272,7 +307,7 @@ func TestBot_ReplaceReaction(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
 		mock := &mockSession{addErr: errors.New("add failed")}
 
-		result := b.ReplaceReaction(mock, "msg123")
+		result := b.ReplaceReaction(mock, "msg123", "target-user")
 
 		if result {
 			t.Error("ReplaceReaction() should return false on add error")
@@ -282,8 +317,8 @@ func TestBot_ReplaceReaction(t *testing.T) {
 
 func TestBot_ProcessMessageReactions(t *testing.T) {
 	cfg := &config.Config{
-		TargetUserID: "target-user",
-		JollySkullID: "jollyskull:123",
+		TargetUserIDs: []string{"target-user"},
+		JollySkullID:  "jollyskull:123",
 	}
 
 	t.Run("replaces skull reaction from target user", func(t *testing.T) {
@@ -411,8 +446,8 @@ func TestBot_Initialize(t *testing.T) {
 
 func TestBot_ProcessHistoricalMessages(t *testing.T) {
 	cfg := &config.Config{
-		TargetUserID: "target-user",
-		JollySkullID: "jollyskull:123",
+		TargetUserIDs: []string{"target-user"},
+		JollySkullID:  "jollyskull:123",
 	}
 
 	t.Run("processes messages until cutoff", func(t *testing.T) {
@@ -525,7 +560,7 @@ func TestBot_ProcessHistoricalMessages(t *testing.T) {
 
 func TestBot_ShouldDeleteMessage(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserID: "user456"},
+		config:    &config.Config{TargetUserIDs: []string{"user456"}},
 		channelID: "chan123",
 		ready:     true,
 	}
@@ -670,7 +705,7 @@ func TestBot_ShouldDeleteMessage(t *testing.T) {
 
 func TestBot_ShouldDeleteMessage_NotReady(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserID: "user456"},
+		config:    &config.Config{TargetUserIDs: []string{"user456"}},
 		channelID: "chan123",
 		ready:     false,
 	}
