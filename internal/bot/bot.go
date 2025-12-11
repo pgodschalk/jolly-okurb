@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	SkullEmoji       = "💀"
 	HistoricalCutoff = "2025-01-01T00:00:00Z"
 )
 
@@ -80,8 +79,8 @@ func (b *Bot) OnReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAd
 		return
 	}
 
-	slog.Debug("detected skull reaction from target user", "message_id", r.MessageID, "user_id", r.UserID)
-	b.ReplaceReaction(s, r.MessageID, r.UserID)
+	slog.Debug("detected skull reaction from target user", "message_id", r.MessageID, "user_id", r.UserID, "emoji", r.Emoji.Name)
+	b.ReplaceReaction(s, r.MessageID, r.UserID, &r.Emoji)
 }
 
 func (b *Bot) OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -112,13 +111,61 @@ func (b *Bot) ShouldDeleteMessage(m *discordgo.MessageCreate) bool {
 	if m.Author == nil || !b.IsTargetUser(m.Author.ID) {
 		return false
 	}
-	// Check if message contains only skull emojis (with optional whitespace)
-	content := strings.ReplaceAll(m.Content, " ", "")
+	return b.IsSkullOnlyMessage(m.Content)
+}
+
+// IsSkullOnlyMessage checks if a message contains only skull-related emojis and whitespace.
+func (b *Bot) IsSkullOnlyMessage(content string) bool {
+	// Remove whitespace
+	content = strings.ReplaceAll(content, " ", "")
+	content = strings.ReplaceAll(content, "\n", "")
+	content = strings.ReplaceAll(content, "\t", "")
 	if content == "" {
 		return false
 	}
-	content = strings.ReplaceAll(content, SkullEmoji, "")
-	return content == ""
+
+	// Remove Unicode skull emoji
+	content = strings.ReplaceAll(content, "💀", "")
+
+	// Remove custom Discord emojis with "skull" in their name (but not jollyskull)
+	// Custom emoji format: <:name:id> or <a:name:id> for animated
+	result := ""
+	for len(content) > 0 {
+		start := strings.Index(content, "<")
+		if start == -1 {
+			// No more custom emojis, keep remaining content
+			result += content
+			break
+		}
+
+		// Keep content before the emoji tag
+		result += content[:start]
+		content = content[start:]
+
+		end := strings.Index(content, ">")
+		if end == -1 {
+			// Malformed emoji, keep remaining content
+			result += content
+			break
+		}
+
+		emoji := content[:end+1]
+		content = content[end+1:]
+
+		// Extract emoji name from <:name:id> or <a:name:id>
+		parts := strings.Split(emoji, ":")
+		if len(parts) >= 2 {
+			name := strings.ToLower(parts[1])
+			if strings.Contains(name, "skull") && !strings.Contains(name, "jollyskull") {
+				// Skip this skull emoji (don't add to result)
+				continue
+			}
+		}
+		// Not a skull emoji, keep it
+		result += emoji
+	}
+
+	return result == ""
 }
 
 func (b *Bot) ShouldProcessReaction(r *discordgo.MessageReactionAdd) bool {
@@ -136,7 +183,7 @@ func (b *Bot) ShouldProcessReaction(r *discordgo.MessageReactionAdd) bool {
 	if !b.IsTargetUser(r.UserID) {
 		return false
 	}
-	if r.Emoji.Name != SkullEmoji {
+	if !b.IsSkullEmoji(&r.Emoji) {
 		return false
 	}
 	return true
@@ -200,13 +247,13 @@ func (b *Bot) ProcessMessageReactions(s Session, msg *discordgo.Message) int {
 	replaced := 0
 
 	for _, reaction := range msg.Reactions {
-		if reaction.Emoji.Name != SkullEmoji {
+		if !b.IsSkullEmoji(reaction.Emoji) {
 			continue
 		}
 
-		targetUsers := b.findTargetUsersWithReaction(s, msg.ID)
+		targetUsers := b.findTargetUsersWithReaction(s, msg.ID, reaction.Emoji)
 		for _, userID := range targetUsers {
-			if b.ReplaceReaction(s, msg.ID, userID) {
+			if b.ReplaceReaction(s, msg.ID, userID, reaction.Emoji) {
 				replaced++
 			}
 		}
@@ -216,15 +263,16 @@ func (b *Bot) ProcessMessageReactions(s Session, msg *discordgo.Message) int {
 }
 
 // findTargetUsersWithReaction paginates through all reactions to find target users.
-// Returns the list of target user IDs that have reacted with the skull emoji.
-func (b *Bot) findTargetUsersWithReaction(s Session, messageID string) []string {
+// Returns the list of target user IDs that have reacted with the given emoji.
+func (b *Bot) findTargetUsersWithReaction(s Session, messageID string, emoji *discordgo.Emoji) []string {
 	var afterID string
 	var found []string
+	emojiStr := GetEmojiAPIString(emoji)
 
 	for {
-		users, err := s.MessageReactions(b.channelID, messageID, SkullEmoji, 100, "", afterID)
+		users, err := s.MessageReactions(b.channelID, messageID, emojiStr, 100, "", afterID)
 		if err != nil {
-			slog.Error("failed to fetch reactions", "message_id", messageID, "error", err)
+			slog.Error("failed to fetch reactions", "message_id", messageID, "emoji", emojiStr, "error", err)
 			return found
 		}
 
@@ -247,10 +295,11 @@ func (b *Bot) findTargetUsersWithReaction(s Session, messageID string) []string 
 	}
 }
 
-func (b *Bot) ReplaceReaction(s Session, messageID, userID string) bool {
-	err := s.MessageReactionRemove(b.channelID, messageID, SkullEmoji, userID)
+func (b *Bot) ReplaceReaction(s Session, messageID, userID string, emoji *discordgo.Emoji) bool {
+	emojiStr := GetEmojiAPIString(emoji)
+	err := s.MessageReactionRemove(b.channelID, messageID, emojiStr, userID)
 	if err != nil {
-		slog.Error("failed to remove skull reaction", "message_id", messageID, "user_id", userID, "error", err)
+		slog.Error("failed to remove skull reaction", "message_id", messageID, "user_id", userID, "emoji", emojiStr, "error", err)
 		return false
 	}
 
@@ -260,7 +309,7 @@ func (b *Bot) ReplaceReaction(s Session, messageID, userID string) bool {
 		return false
 	}
 
-	slog.Debug("replaced skull with jollyskull", "message_id", messageID, "user_id", userID)
+	slog.Debug("replaced skull with jollyskull", "message_id", messageID, "user_id", userID, "emoji", emojiStr)
 	return true
 }
 
@@ -290,4 +339,32 @@ func (b *Bot) IsTargetUser(userID string) bool {
 		}
 	}
 	return false
+}
+
+// IsSkullEmoji checks if an emoji is a skull-related emoji (but not jollyskull).
+// Matches the standard skull emoji (💀) and any custom emoji with "skull" in its name.
+func (b *Bot) IsSkullEmoji(emoji *discordgo.Emoji) bool {
+	// Standard Unicode skull emoji
+	if emoji.Name == "💀" {
+		return true
+	}
+	// Check for custom emojis with "skull" in the name (case-insensitive)
+	name := strings.ToLower(emoji.Name)
+	if !strings.Contains(name, "skull") {
+		return false
+	}
+	// Exclude jollyskull
+	if strings.Contains(name, "jollyskull") {
+		return false
+	}
+	return true
+}
+
+// GetEmojiAPIString returns the string format needed for Discord API calls.
+// For custom emojis: "name:id", for Unicode emojis: the emoji itself.
+func GetEmojiAPIString(emoji *discordgo.Emoji) string {
+	if emoji.ID != "" {
+		return emoji.Name + ":" + emoji.ID
+	}
+	return emoji.Name
 }

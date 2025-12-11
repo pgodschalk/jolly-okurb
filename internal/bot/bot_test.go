@@ -131,6 +131,73 @@ func TestHasUser(t *testing.T) {
 	}
 }
 
+func TestBot_IsSkullEmoji(t *testing.T) {
+	b := &Bot{config: &config.Config{}}
+
+	tests := []struct {
+		name     string
+		emoji    *discordgo.Emoji
+		expected bool
+	}{
+		{"unicode skull", &discordgo.Emoji{Name: "💀"}, true},
+		{"custom skull emoji", &discordgo.Emoji{Name: "skull", ID: "123"}, true},
+		{"custom deadskull emoji", &discordgo.Emoji{Name: "deadskull", ID: "456"}, true},
+		{"custom skullface emoji", &discordgo.Emoji{Name: "skullface", ID: "789"}, true},
+		{"custom SKULL uppercase", &discordgo.Emoji{Name: "SKULL", ID: "111"}, true},
+		{"custom Skull mixed case", &discordgo.Emoji{Name: "Skull", ID: "222"}, true},
+		{"jollyskull excluded", &discordgo.Emoji{Name: "jollyskull", ID: "333"}, false},
+		{"JOLLYSKULL excluded", &discordgo.Emoji{Name: "JOLLYSKULL", ID: "444"}, false},
+		{"thumbs up ignored", &discordgo.Emoji{Name: "👍"}, false},
+		{"heart ignored", &discordgo.Emoji{Name: "❤️"}, false},
+		{"custom non-skull emoji", &discordgo.Emoji{Name: "party", ID: "555"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := b.IsSkullEmoji(tt.emoji)
+			if result != tt.expected {
+				t.Errorf("IsSkullEmoji(%q) = %v, want %v", tt.emoji.Name, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBot_IsSkullOnlyMessage(t *testing.T) {
+	b := &Bot{config: &config.Config{}}
+
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{"single unicode skull", "💀", true},
+		{"multiple unicode skulls", "💀💀💀", true},
+		{"skulls with spaces", "💀 💀 💀", true},
+		{"skulls with newlines", "💀\n💀", true},
+		{"custom skull emoji", "<:skull:123456>", true},
+		{"custom deadskull emoji", "<:deadskull:789>", true},
+		{"animated skull emoji", "<a:skull:123456>", true},
+		{"mixed unicode and custom skulls", "💀<:skull:123>💀", true},
+		{"jollyskull excluded", "<:jollyskull:123>", false},
+		{"skull with text", "💀 lol", false},
+		{"text only", "hello", false},
+		{"empty", "", false},
+		{"whitespace only", "   ", false},
+		{"non-skull custom emoji", "<:party:123>", false},
+		{"skull and non-skull emoji", "💀<:party:123>", false},
+		{"skull custom emoji case insensitive", "<:SKULL:123>", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := b.IsSkullOnlyMessage(tt.content)
+			if result != tt.expected {
+				t.Errorf("IsSkullOnlyMessage(%q) = %v, want %v", tt.content, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestBot_ShouldProcessReaction(t *testing.T) {
 	b := &Bot{
 		config:    &config.Config{TargetUserIDs: []string{"user456"}},
@@ -144,7 +211,7 @@ func TestBot_ShouldProcessReaction(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "processes skull from target user in target channel",
+			name: "processes unicode skull from target user",
 			reaction: &discordgo.MessageReactionAdd{
 				MessageReaction: &discordgo.MessageReaction{
 					ChannelID: "chan123",
@@ -153,6 +220,28 @@ func TestBot_ShouldProcessReaction(t *testing.T) {
 				},
 			},
 			expected: true,
+		},
+		{
+			name: "processes custom skull emoji",
+			reaction: &discordgo.MessageReactionAdd{
+				MessageReaction: &discordgo.MessageReaction{
+					ChannelID: "chan123",
+					UserID:    "user456",
+					Emoji:     discordgo.Emoji{Name: "deadskull", ID: "123456"},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "ignores jollyskull emoji",
+			reaction: &discordgo.MessageReactionAdd{
+				MessageReaction: &discordgo.MessageReaction{
+					ChannelID: "chan123",
+					UserID:    "user456",
+					Emoji:     discordgo.Emoji{Name: "jollyskull", ID: "789"},
+				},
+			},
+			expected: false,
 		},
 		{
 			name: "ignores wrong channel",
@@ -260,11 +349,12 @@ func TestBot_ReplaceReaction(t *testing.T) {
 		JollySkullID:  "jollyskull:123",
 	}
 
-	t.Run("successful replacement", func(t *testing.T) {
+	t.Run("successful replacement with unicode emoji", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
 		mock := &mockSession{}
+		emoji := &discordgo.Emoji{Name: "💀"}
 
-		result := b.ReplaceReaction(mock, "msg123", "target-user")
+		result := b.ReplaceReaction(mock, "msg123", "target-user", emoji)
 
 		if !result {
 			t.Error("ReplaceReaction() should return true on success")
@@ -289,11 +379,29 @@ func TestBot_ReplaceReaction(t *testing.T) {
 		}
 	})
 
+	t.Run("successful replacement with custom emoji", func(t *testing.T) {
+		b := &Bot{config: cfg, channelID: "test-channel"}
+		mock := &mockSession{}
+		emoji := &discordgo.Emoji{Name: "deadskull", ID: "456789"}
+
+		result := b.ReplaceReaction(mock, "msg123", "target-user", emoji)
+
+		if !result {
+			t.Error("ReplaceReaction() should return true on success")
+		}
+
+		removed := mock.removedReactions[0]
+		if removed.emojiID != "deadskull:456789" {
+			t.Errorf("expected custom emoji format, got %q", removed.emojiID)
+		}
+	})
+
 	t.Run("fails on remove error", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
 		mock := &mockSession{removeErr: errors.New("remove failed")}
+		emoji := &discordgo.Emoji{Name: "💀"}
 
-		result := b.ReplaceReaction(mock, "msg123", "target-user")
+		result := b.ReplaceReaction(mock, "msg123", "target-user", emoji)
 
 		if result {
 			t.Error("ReplaceReaction() should return false on remove error")
@@ -306,8 +414,9 @@ func TestBot_ReplaceReaction(t *testing.T) {
 	t.Run("fails on add error", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
 		mock := &mockSession{addErr: errors.New("add failed")}
+		emoji := &discordgo.Emoji{Name: "💀"}
 
-		result := b.ReplaceReaction(mock, "msg123", "target-user")
+		result := b.ReplaceReaction(mock, "msg123", "target-user", emoji)
 
 		if result {
 			t.Error("ReplaceReaction() should return false on add error")
@@ -613,6 +722,39 @@ func TestBot_ShouldDeleteMessage(t *testing.T) {
 				},
 			},
 			expected: true,
+		},
+		{
+			name: "deletes custom skull emoji message",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "<:skull:123456>",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "deletes mixed skull emojis",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "💀<:deadskull:789>💀",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "ignores jollyskull-only message",
+			message: &discordgo.MessageCreate{
+				Message: &discordgo.Message{
+					ChannelID: "chan123",
+					Content:   "<:jollyskull:123>",
+					Author:    &discordgo.User{ID: "user456"},
+				},
+			},
+			expected: false,
 		},
 		{
 			name: "ignores skull with other text",
