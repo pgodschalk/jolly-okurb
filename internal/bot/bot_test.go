@@ -115,36 +115,6 @@ func TestFindChannelByName(t *testing.T) {
 	}
 }
 
-func TestHasUser(t *testing.T) {
-	users := []*discordgo.User{
-		{ID: "user1"},
-		{ID: "user2"},
-		{ID: "target-user"},
-	}
-
-	tests := []struct {
-		name     string
-		users    []*discordgo.User
-		targetID string
-		expected bool
-	}{
-		{"finds target user", users, "target-user", true},
-		{"finds first user", users, "user1", true},
-		{"does not find missing user", users, "missing", false},
-		{"handles empty list", []*discordgo.User{}, "any", false},
-		{"handles nil list", nil, "any", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := HasUser(tt.users, tt.targetID)
-			if result != tt.expected {
-				t.Errorf("HasUser() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestGetEmojiAPIString(t *testing.T) {
 	tests := []struct {
 		name     string

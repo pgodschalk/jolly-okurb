@@ -330,15 +330,6 @@ func FindChannelByName(channels []*discordgo.Channel, name string) string {
 	return ""
 }
 
-func HasUser(users []*discordgo.User, userID string) bool {
-	for _, user := range users {
-		if user.ID == userID {
-			return true
-		}
-	}
-	return false
-}
-
 // IsTargetUser checks if the given user ID is in the target user set (O(1) lookup).
 func (b *Bot) IsTargetUser(userID string) bool {
 	_, ok := b.config.TargetUserIDSet[userID]
