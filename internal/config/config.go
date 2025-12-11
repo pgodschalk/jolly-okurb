@@ -31,7 +31,7 @@ func Load() (*Config, error) {
 	}
 	cfg.TargetUserIDSet = make(map[string]struct{})
 	if targetUserIDs != "" {
-		for _, id := range strings.Split(targetUserIDs, ",") {
+		for id := range strings.SplitSeq(targetUserIDs, ",") {
 			id = strings.TrimSpace(id)
 			if id != "" {
 				cfg.TargetUserIDs = append(cfg.TargetUserIDs, id)
