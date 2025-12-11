@@ -7,12 +7,12 @@ import (
 )
 
 type Config struct {
-	Token           string            // Discord bot token
-	GuildID         string            // Server ID to operate in
-	ChannelName     string            // Channel name to monitor
-	TargetUserIDs   []string          // User IDs whose reactions to replace
+	Token           string              // Discord bot token
+	GuildID         string              // Server ID to operate in
+	ChannelName     string              // Channel name to monitor
+	TargetUserIDs   []string            // User IDs whose reactions to replace
 	TargetUserIDSet map[string]struct{} // Set for O(1) lookup
-	JollySkullID    string            // Custom emoji ID for jollyskull
+	JollySkullID    string              // Custom emoji ID for jollyskull
 }
 
 func Load() (*Config, error) {
