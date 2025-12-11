@@ -127,45 +127,53 @@ func (b *Bot) IsSkullOnlyMessage(content string) bool {
 	// Remove Unicode skull emoji
 	content = strings.ReplaceAll(content, "💀", "")
 
-	// Remove custom Discord emojis with "skull" in their name (but not jollyskull)
-	// Custom emoji format: <:name:id> or <a:name:id> for animated
-	result := ""
+	// Filter out skull custom emojis, keep everything else
+	remaining := filterCustomEmojis(content, isSkullCustomEmoji)
+
+	return remaining == ""
+}
+
+// filterCustomEmojis processes custom Discord emojis in content.
+// It removes emojis where shouldRemove returns true and keeps the rest.
+func filterCustomEmojis(content string, shouldRemove func(emojiTag string) bool) string {
+	var result strings.Builder
 	for len(content) > 0 {
 		start := strings.Index(content, "<")
 		if start == -1 {
-			// No more custom emojis, keep remaining content
-			result += content
+			result.WriteString(content)
 			break
 		}
 
 		// Keep content before the emoji tag
-		result += content[:start]
+		result.WriteString(content[:start])
 		content = content[start:]
 
 		end := strings.Index(content, ">")
 		if end == -1 {
-			// Malformed emoji, keep remaining content
-			result += content
+			// Malformed tag, keep remaining content
+			result.WriteString(content)
 			break
 		}
 
-		emoji := content[:end+1]
+		emojiTag := content[:end+1]
 		content = content[end+1:]
 
-		// Extract emoji name from <:name:id> or <a:name:id>
-		parts := strings.Split(emoji, ":")
-		if len(parts) >= 2 {
-			name := strings.ToLower(parts[1])
-			if strings.Contains(name, "skull") && !strings.Contains(name, "jollyskull") {
-				// Skip this skull emoji (don't add to result)
-				continue
-			}
+		if !shouldRemove(emojiTag) {
+			result.WriteString(emojiTag)
 		}
-		// Not a skull emoji, keep it
-		result += emoji
 	}
+	return result.String()
+}
 
-	return result == ""
+// isSkullCustomEmoji checks if a Discord custom emoji tag contains "skull" (but not "jollyskull").
+// Expects format: <:name:id> or <a:name:id> for animated emojis.
+func isSkullCustomEmoji(emojiTag string) bool {
+	parts := strings.Split(emojiTag, ":")
+	if len(parts) < 2 {
+		return false
+	}
+	name := strings.ToLower(parts[1])
+	return strings.Contains(name, "skull") && !strings.Contains(name, "jollyskull")
 }
 
 func (b *Bot) ShouldProcessReaction(r *discordgo.MessageReactionAdd) bool {
@@ -331,14 +339,10 @@ func HasUser(users []*discordgo.User, userID string) bool {
 	return false
 }
 
-// IsTargetUser checks if the given user ID is in the target user list.
+// IsTargetUser checks if the given user ID is in the target user set (O(1) lookup).
 func (b *Bot) IsTargetUser(userID string) bool {
-	for _, id := range b.config.TargetUserIDs {
-		if id == userID {
-			return true
-		}
-	}
-	return false
+	_, ok := b.config.TargetUserIDSet[userID]
+	return ok
 }
 
 // IsSkullEmoji checks if an emoji is a skull-related emoji (but not jollyskull).

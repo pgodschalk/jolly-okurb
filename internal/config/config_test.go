@@ -58,6 +58,15 @@ func TestLoad(t *testing.T) {
 				if !reflect.DeepEqual(cfg.TargetUserIDs, expected) {
 					t.Errorf("TargetUserIDs = %v, want %v", cfg.TargetUserIDs, expected)
 				}
+				// Verify set is populated for O(1) lookup
+				for _, id := range expected {
+					if _, ok := cfg.TargetUserIDSet[id]; !ok {
+						t.Errorf("TargetUserIDSet missing %q", id)
+					}
+				}
+				if len(cfg.TargetUserIDSet) != len(expected) {
+					t.Errorf("TargetUserIDSet has %d entries, want %d", len(cfg.TargetUserIDSet), len(expected))
+				}
 			},
 		},
 		{

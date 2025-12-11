@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	Token         string   // Discord bot token
-	GuildID       string   // Server ID to operate in
-	ChannelName   string   // Channel name to monitor
-	TargetUserIDs []string // User IDs whose reactions to replace
-	JollySkullID  string   // Custom emoji ID for jollyskull
+	Token           string            // Discord bot token
+	GuildID         string            // Server ID to operate in
+	ChannelName     string            // Channel name to monitor
+	TargetUserIDs   []string          // User IDs whose reactions to replace
+	TargetUserIDSet map[string]struct{} // Set for O(1) lookup
+	JollySkullID    string            // Custom emoji ID for jollyskull
 }
 
 func Load() (*Config, error) {
@@ -28,11 +29,13 @@ func Load() (*Config, error) {
 		// Fall back to singular for backwards compatibility
 		targetUserIDs = os.Getenv("DISCORD_TARGET_USER_ID")
 	}
+	cfg.TargetUserIDSet = make(map[string]struct{})
 	if targetUserIDs != "" {
 		for _, id := range strings.Split(targetUserIDs, ",") {
 			id = strings.TrimSpace(id)
 			if id != "" {
 				cfg.TargetUserIDs = append(cfg.TargetUserIDs, id)
+				cfg.TargetUserIDSet[id] = struct{}{}
 			}
 		}
 	}

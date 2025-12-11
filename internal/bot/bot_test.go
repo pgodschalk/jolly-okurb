@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,19 @@ type mockSession struct {
 	removeErr        error
 	addErr           error
 	messagesErr      error
+}
+
+// newTestConfig creates a config with TargetUserIDSet populated for testing.
+func newTestConfig(targetUserIDs []string, jollySkullID string) *config.Config {
+	set := make(map[string]struct{})
+	for _, id := range targetUserIDs {
+		set[id] = struct{}{}
+	}
+	return &config.Config{
+		TargetUserIDs:   targetUserIDs,
+		TargetUserIDSet: set,
+		JollySkullID:    jollySkullID,
+	}
 }
 
 type reactionCall struct {
@@ -131,6 +145,88 @@ func TestHasUser(t *testing.T) {
 	}
 }
 
+func TestGetEmojiAPIString(t *testing.T) {
+	tests := []struct {
+		name     string
+		emoji    *discordgo.Emoji
+		expected string
+	}{
+		{"unicode skull emoji", &discordgo.Emoji{Name: "💀"}, "💀"},
+		{"unicode thumbs up", &discordgo.Emoji{Name: "👍"}, "👍"},
+		{"custom emoji with ID", &discordgo.Emoji{Name: "skull", ID: "123456"}, "skull:123456"},
+		{"custom emoji with long ID", &discordgo.Emoji{Name: "deadskull", ID: "987654321"}, "deadskull:987654321"},
+		{"animated custom emoji", &discordgo.Emoji{Name: "dance", ID: "555"}, "dance:555"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetEmojiAPIString(tt.emoji)
+			if result != tt.expected {
+				t.Errorf("GetEmojiAPIString() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsSkullCustomEmoji(t *testing.T) {
+	tests := []struct {
+		name     string
+		emojiTag string
+		expected bool
+	}{
+		{"standard skull", "<:skull:123>", true},
+		{"deadskull", "<:deadskull:456>", true},
+		{"skullface", "<:skullface:789>", true},
+		{"animated skull", "<a:skull:111>", true},
+		{"uppercase SKULL", "<:SKULL:222>", true},
+		{"jollyskull excluded", "<:jollyskull:333>", false},
+		{"JOLLYSKULL excluded", "<:JOLLYSKULL:444>", false},
+		{"non-skull emoji", "<:party:555>", false},
+		{"heart emoji", "<:heart:666>", false},
+		{"malformed no colons", "<skull123>", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isSkullCustomEmoji(tt.emojiTag)
+			if result != tt.expected {
+				t.Errorf("isSkullCustomEmoji(%q) = %v, want %v", tt.emojiTag, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilterCustomEmojis(t *testing.T) {
+	// Test with a simple filter that removes emojis containing "remove"
+	removeFilter := func(tag string) bool {
+		return strings.Contains(tag, "remove")
+	}
+
+	tests := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{"no emojis", "hello world", "hello world"},
+		{"keep non-matching emoji", "<:keep:123>", "<:keep:123>"},
+		{"remove matching emoji", "<:remove:456>", ""},
+		{"mixed content", "hello<:remove:1>world", "helloworld"},
+		{"multiple emojis", "<:keep:1><:remove:2><:keep:3>", "<:keep:1><:keep:3>"},
+		{"malformed no closing", "<:remove", "<:remove"},
+		{"empty string", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterCustomEmojis(tt.content, removeFilter)
+			if result != tt.expected {
+				t.Errorf("filterCustomEmojis(%q) = %q, want %q", tt.content, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestBot_IsSkullEmoji(t *testing.T) {
 	b := &Bot{config: &config.Config{}}
 
@@ -200,7 +296,7 @@ func TestBot_IsSkullOnlyMessage(t *testing.T) {
 
 func TestBot_ShouldProcessReaction(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserIDs: []string{"user456"}},
+		config:    newTestConfig([]string{"user456"}, ""),
 		channelID: "chan123",
 		ready:     true,
 	}
@@ -290,7 +386,7 @@ func TestBot_ShouldProcessReaction(t *testing.T) {
 
 func TestBot_ShouldProcessReaction_NotReady(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserIDs: []string{"user456"}},
+		config:    newTestConfig([]string{"user456"}, ""),
 		channelID: "chan123",
 		ready:     false,
 	}
@@ -310,7 +406,7 @@ func TestBot_ShouldProcessReaction_NotReady(t *testing.T) {
 
 func TestBot_ShouldProcessReaction_MultipleTargetUsers(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserIDs: []string{"user1", "user2", "user3"}},
+		config:    newTestConfig([]string{"user1", "user2", "user3"}, ""),
 		channelID: "chan123",
 		ready:     true,
 	}
@@ -344,10 +440,7 @@ func TestBot_ShouldProcessReaction_MultipleTargetUsers(t *testing.T) {
 }
 
 func TestBot_ReplaceReaction(t *testing.T) {
-	cfg := &config.Config{
-		TargetUserIDs: []string{"target-user"},
-		JollySkullID:  "jollyskull:123",
-	}
+	cfg := newTestConfig([]string{"target-user"}, "jollyskull:123")
 
 	t.Run("successful replacement with unicode emoji", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
@@ -425,10 +518,7 @@ func TestBot_ReplaceReaction(t *testing.T) {
 }
 
 func TestBot_ProcessMessageReactions(t *testing.T) {
-	cfg := &config.Config{
-		TargetUserIDs: []string{"target-user"},
-		JollySkullID:  "jollyskull:123",
-	}
+	cfg := newTestConfig([]string{"target-user"}, "jollyskull:123")
 
 	t.Run("replaces skull reaction from target user", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
@@ -554,10 +644,7 @@ func TestBot_Initialize(t *testing.T) {
 }
 
 func TestBot_ProcessHistoricalMessages(t *testing.T) {
-	cfg := &config.Config{
-		TargetUserIDs: []string{"target-user"},
-		JollySkullID:  "jollyskull:123",
-	}
+	cfg := newTestConfig([]string{"target-user"}, "jollyskull:123")
 
 	t.Run("processes messages until cutoff", func(t *testing.T) {
 		b := &Bot{config: cfg, channelID: "test-channel"}
@@ -669,7 +756,7 @@ func TestBot_ProcessHistoricalMessages(t *testing.T) {
 
 func TestBot_ShouldDeleteMessage(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserIDs: []string{"user456"}},
+		config:    newTestConfig([]string{"user456"}, ""),
 		channelID: "chan123",
 		ready:     true,
 	}
@@ -847,7 +934,7 @@ func TestBot_ShouldDeleteMessage(t *testing.T) {
 
 func TestBot_ShouldDeleteMessage_NotReady(t *testing.T) {
 	b := &Bot{
-		config:    &config.Config{TargetUserIDs: []string{"user456"}},
+		config:    newTestConfig([]string{"user456"}, ""),
 		channelID: "chan123",
 		ready:     false,
 	}
