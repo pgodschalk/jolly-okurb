@@ -124,8 +124,10 @@ func (b *Bot) IsSkullOnlyMessage(content string) bool {
 		return false
 	}
 
-	// Remove Unicode skull emoji
+	// Remove Unicode skull emojis
 	content = strings.ReplaceAll(content, "💀", "")
+	content = strings.ReplaceAll(content, "☠️", "")
+	content = strings.ReplaceAll(content, "☠", "")
 
 	// Filter out skull custom emojis, keep everything else
 	remaining := filterCustomEmojis(content, isSkullCustomEmoji)
@@ -337,10 +339,10 @@ func (b *Bot) IsTargetUser(userID string) bool {
 }
 
 // IsSkullEmoji checks if an emoji is a skull-related emoji (but not jollyskull).
-// Matches the standard skull emoji (💀) and any custom emoji with "skull" in its name.
+// Matches skull emojis (💀, ☠️) and any custom emoji with "skull" in its name.
 func (b *Bot) IsSkullEmoji(emoji *discordgo.Emoji) bool {
-	// Standard Unicode skull emoji
-	if emoji.Name == "💀" {
+	// Standard Unicode skull emojis
+	if emoji.Name == "💀" || emoji.Name == "☠️" || emoji.Name == "☠" {
 		return true
 	}
 	// Check for custom emojis with "skull" in the name (case-insensitive)

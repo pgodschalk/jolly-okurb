@@ -206,6 +206,8 @@ func TestBot_IsSkullEmoji(t *testing.T) {
 		expected bool
 	}{
 		{"unicode skull", &discordgo.Emoji{Name: "💀"}, true},
+		{"unicode skull and crossbones", &discordgo.Emoji{Name: "☠️"}, true},
+		{"unicode skull and crossbones without variant", &discordgo.Emoji{Name: "☠"}, true},
 		{"custom skull emoji", &discordgo.Emoji{Name: "skull", ID: "123"}, true},
 		{"custom deadskull emoji", &discordgo.Emoji{Name: "deadskull", ID: "456"}, true},
 		{"custom skullface emoji", &discordgo.Emoji{Name: "skullface", ID: "789"}, true},
@@ -237,6 +239,9 @@ func TestBot_IsSkullOnlyMessage(t *testing.T) {
 		expected bool
 	}{
 		{"single unicode skull", "💀", true},
+		{"single skull and crossbones", "☠️", true},
+		{"skull and crossbones without variant", "☠", true},
+		{"mixed skull emojis", "💀☠️💀", true},
 		{"multiple unicode skulls", "💀💀💀", true},
 		{"skulls with spaces", "💀 💀 💀", true},
 		{"skulls with newlines", "💀\n💀", true},
